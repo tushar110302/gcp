@@ -1,0 +1,101 @@
+gcloud services enable container.googleapis.com \
+    cloudbuild.googleapis.com \
+    sourcerepo.googleapis.com
+
+
+export PROJECT_ID=$(gcloud config get-value project)
+export REGION="us-east4"
+export ZONE="us-east4-c"
+export REPOSITORY_NAME="my-repository"
+export CLUSTER_NAME="hello-cluster"
+export REPO_NAME="sample-app"
+
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+--member=serviceAccount:$(gcloud projects describe $PROJECT_ID \
+--format="value(projectNumber)")@cloudbuild.gserviceaccount.com --role="roles/container.developer"
+
+
+git config --global user.email <email>
+git config --global user.name <name>
+
+
+
+
+# Create a Docker repository in Artifact Registry
+gcloud artifacts repositories create $REPOSITORY_NAME \
+    --repository-format=docker \
+    --location=$REGION \
+    --project=$PROJECT_ID
+
+
+
+# Create a GKE cluster
+gcloud container clusters create $CLUSTER_NAME \
+    --zone=$ZONE \
+    --release-channel=regular \
+    --cluster-version=1.27.3-gke.100 \
+    --enable-autoscaling \
+    --num-nodes=3 \
+    --min-nodes=2 \
+    --max-nodes=6
+
+
+# Set your cluster context
+gcloud container clusters get-credentials $CLUSTER_NAME --zone=$ZONE
+
+# Create prod and dev namespaces
+kubectl create namespace prod
+kubectl create namespace dev
+
+
+
+# Create the repository
+gcloud source repos create $REPO_NAME --project=$PROJECT_ID
+
+# Clone the repository
+gcloud source repos clone $REPO_NAME --project=$PROJECT_ID
+
+
+# Change to the home directory
+cd ~
+
+# Copy the sample code
+gsutil cp -r gs://spls/gsp330/sample-app/* sample-app
+
+
+# Replace placeholders in the Cloud Build files
+for file in sample-app/cloudbuild-dev.yaml sample-app/cloudbuild.yaml; do
+    sed -i "s/<your-region>/${REGION}/g" "$file"
+    sed -i "s/<your-zone>/${ZONE}/g" "$file"
+done
+
+# Change to the sample-app directory
+cd sample-app
+
+# Initialize a git repository
+git init
+
+# Add all files
+git add .
+
+# Commit changes
+git commit -m "Initial commit"
+
+
+# Push changes to the master branch
+git push -u origin master
+
+
+# Create and switch to the dev branch
+git checkout -b dev
+
+# Make a commit
+# (You can make changes to the code or simply use the same commit message)
+git commit -m "Commit to dev branch"
+
+# Push changes to the dev branch
+git push -u origin dev
+
+
+gcloud source repos describe $REPO_NAME --project=$PROJECT_ID
